@@ -35,19 +35,31 @@ export function indexPage(db: Database.Database, page: PageRecord): void {
   );
 }
 
+/**
+ * Sanitize a user query for FTS5 MATCH syntax.
+ * Wraps each token in double-quotes so that special characters
+ * like `-` (NOT operator) and `*` are treated as literals.
+ */
+function sanitizeFtsQuery(raw: string): string {
+  const tokens = raw.trim().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return '""';
+  return tokens.map((t) => `"${t.replace(/"/g, '""')}"`).join(" ");
+}
+
 export function searchPages(
   db: Database.Database,
   query: string,
   options?: { domain?: string; category?: string; maxResults?: number },
 ): SearchResult[] {
   const max = options?.maxResults ?? 5;
+  const ftsQuery = sanitizeFtsQuery(query);
   let sql = `
     SELECT pages_fts.id, pages_fts.title, pages_fts.content, pages_fts.tags, rank
     FROM pages_fts
     JOIN pages ON pages.id = pages_fts.id
     WHERE pages_fts MATCH ?
   `;
-  const params: unknown[] = [query];
+  const params: unknown[] = [ftsQuery];
 
   if (options?.domain) {
     sql += " AND pages.domain = ?";
