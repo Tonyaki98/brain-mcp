@@ -4,6 +4,7 @@ import type Database from "better-sqlite3";
 import type { VaultDiscovery } from "./discovery.js";
 import { readPage } from "./reader.js";
 import { indexPage, removePage } from "../search/fts.js";
+import { generateEmbedding, storeEmbedding, removeEmbedding } from "../search/embeddings.js";
 import { removeEdgesForPage } from "./linker.js";
 
 function pageIdFromPath(vaultPath: string, filePath: string): string {
@@ -34,7 +35,7 @@ export function startWatcher(
       const parts = id.split("/");
       if (parts.length < 3) return;
 
-      indexPage(db, {
+      const page = {
         id,
         domain: parts[0],
         category: parts[1],
@@ -47,7 +48,15 @@ export function startWatcher(
         created_at: (data.frontmatter.created as string) ?? new Date().toISOString(),
         updated_at: (data.frontmatter.updated as string) ?? new Date().toISOString(),
         content: data.content,
-      });
+      };
+
+      indexPage(db, page);
+
+      // Generate embedding asynchronously (fire-and-forget)
+      const text = `${page.title} ${page.tags ?? ""} ${page.content}`.slice(0, 1000);
+      generateEmbedding(text)
+        .then((embedding) => storeEmbedding(db, page.id, embedding))
+        .catch(() => {}); // Silently ignore if model not ready
     } catch {
       // File might be mid-write, ignore
     }
@@ -75,6 +84,7 @@ export function startWatcher(
     } else if (filePath.endsWith(".md")) {
       const id = pageIdFromPath(vaultPath, filePath);
       removePage(db, id);
+      removeEmbedding(db, id);
       removeEdgesForPage(db, id);
     }
   });

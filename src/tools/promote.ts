@@ -21,19 +21,19 @@ export interface PromoteInput {
   }>;
 }
 
-export function promote(
+export async function promote(
   vaultPath: string,
   discovery: VaultDiscovery,
   db: Database.Database,
   input: PromoteInput,
-): string {
+): Promise<string> {
   if (input.learnings.length === 0) {
     return "No hay aprendizajes para promover.";
   }
 
   const results: string[] = [];
   for (const learning of input.learnings) {
-    const result = ingest(vaultPath, discovery, db, {
+    const result = await ingest(vaultPath, discovery, db, {
       content: learning.content,
       domain: learning.domain,
       category: learning.category,

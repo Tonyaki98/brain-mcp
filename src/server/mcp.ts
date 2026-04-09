@@ -13,6 +13,7 @@ import { lint } from "../tools/lint.js";
 import { remember } from "../tools/remember.js";
 import { forget } from "../tools/forget.js";
 import { checkStaleEphemeral } from "../ephemeral/stale-check.js";
+import { logEntry } from "../wiki/log-manager.js";
 
 export function createMcpServer(
   vaultPath: string,
@@ -83,7 +84,7 @@ export function createMcpServer(
       })).optional().describe("Links a páginas existentes"),
     },
     async (input) => {
-      const result = ingest(vaultPath, discovery, db, input);
+      const result = await ingest(vaultPath, discovery, db, input);
       session.log("ingest", `${input.domain}/${input.category}/${input.title}`);
       session.trackPageCreated(`${input.domain}/${input.category}/${input.title}`);
       return { content: [{ type: "text", text: withStaleCheck(result) }] };
@@ -93,7 +94,7 @@ export function createMcpServer(
   // query
   server.tool(
     "query",
-    "Busca en el vault usando full-text search y devuelve páginas relevantes con su contenido completo",
+    "Busca en el vault usando búsqueda híbrida (semántica + full-text) y devuelve páginas relevantes con su contenido completo",
     {
       question: z.string().describe("Texto de búsqueda"),
       domain: z.string().optional().describe("Filtrar por dominio"),
@@ -101,9 +102,10 @@ export function createMcpServer(
       max_results: z.number().optional().describe("Máximo de resultados (default: 5)"),
     },
     async (input) => {
-      const result = query(vaultPath, db, input);
-      session.log("query", `"${input.question}"${input.domain ? ` en ${input.domain}` : ""}`);
-      return { content: [{ type: "text", text: withStaleCheck(result) }] };
+      const { text, logDetail } = await query(vaultPath, db, input);
+      session.log("query", logDetail);
+      logEntry(vaultPath, "query", logDetail);
+      return { content: [{ type: "text", text: withStaleCheck(text) }] };
     },
   );
 
@@ -129,7 +131,7 @@ export function createMcpServer(
       })).describe("Lista de aprendizajes a integrar"),
     },
     async (input) => {
-      const result = promote(vaultPath, discovery, db, input);
+      const result = await promote(vaultPath, discovery, db, input);
       session.log("promote", `${input.learnings.length} aprendizajes — ${input.session_summary}`);
       for (const l of input.learnings) {
         session.trackPageCreated(`${l.domain}/${l.category}/${l.title}`);
@@ -188,7 +190,7 @@ export function createMcpServer(
       expires: z.string().optional().describe("Fecha de expiración ISO (ej: 2026-04-22). Si no se especifica, vive hasta que la borres"),
     },
     async (input) => {
-      const result = remember(vaultPath, db, input);
+      const result = await remember(vaultPath, db, input);
       session.log("remember", `"${input.title}"`);
       return { content: [{ type: "text", text: result }] };
     },

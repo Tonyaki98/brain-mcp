@@ -62,6 +62,12 @@ CREATE TABLE IF NOT EXISTS domains (
   categories  TEXT NOT NULL,
   created_at  TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS embeddings (
+  page_id     TEXT PRIMARY KEY REFERENCES pages(id) ON DELETE CASCADE,
+  embedding   BLOB NOT NULL,
+  updated_at  TEXT NOT NULL
+);
 `;
 
 export function initDB(dbPath: string): Database.Database {

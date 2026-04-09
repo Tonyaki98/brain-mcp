@@ -10,22 +10,30 @@ export interface QueryInput {
   max_results?: number;
 }
 
-export function query(
+export interface QueryResult {
+  text: string;
+  logDetail: string;
+}
+
+export async function query(
   vaultPath: string,
   db: Database.Database,
   input: QueryInput,
-): string {
-  const results = searchPages(db, input.question, {
+): Promise<QueryResult> {
+  const { results, meta } = await searchPages(db, input.question, {
     domain: input.domain,
     category: input.category,
     maxResults: input.max_results ?? 5,
   });
 
+  const logDetail = `"${input.question}" → ${meta.mode} fts:${meta.ftsHits} semantic:${meta.semanticHits} returned:${meta.totalReturned}${meta.topResult ? ` top:${meta.topResult}` : ""}`;
+
   if (results.length === 0) {
-    return "No se encontraron resultados para esa consulta.";
+    return { text: "No se encontraron resultados para esa consulta.", logDetail };
   }
 
   const output: string[] = [];
+
   for (const result of results) {
     const parts = result.id.split("/");
     const filePath = path.join(vaultPath, ...parts) + ".md";
@@ -44,5 +52,5 @@ export function query(
     }
   }
 
-  return output.join("\n\n");
+  return { text: output.join("\n\n"), logDetail };
 }

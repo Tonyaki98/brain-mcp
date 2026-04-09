@@ -1,7 +1,7 @@
 import path from "node:path";
 import { appendToFile } from "../vault/writer.js";
 
-export type LogOperation = "create_domain" | "ingest" | "promote" | "link" | "delete" | "remember" | "forget";
+export type LogOperation = "create_domain" | "ingest" | "promote" | "link" | "delete" | "remember" | "forget" | "query";
 
 export function logEntry(
   vaultPath: string,

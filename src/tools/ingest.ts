@@ -3,7 +3,7 @@ import type Database from "better-sqlite3";
 import type { VaultDiscovery } from "../vault/discovery.js";
 import { writePage, toKebabCase } from "../vault/writer.js";
 import { fileExists } from "../vault/reader.js";
-import { indexPage } from "../search/fts.js";
+import { indexPageWithEmbedding } from "../search/fts.js";
 import { createEdge } from "../vault/linker.js";
 import { regenerateIndex } from "../wiki/index-manager.js";
 import { logEntry } from "../wiki/log-manager.js";
@@ -25,12 +25,12 @@ export interface IngestInput {
   }>;
 }
 
-export function ingest(
+export async function ingest(
   vaultPath: string,
   discovery: VaultDiscovery,
   db: Database.Database,
   input: IngestInput,
-): string {
+): Promise<string> {
   if (!discovery.domainExists(input.domain)) {
     return `Error: dominio "${input.domain}" no existe. Usa create_domain primero.`;
   }
@@ -91,8 +91,8 @@ export function ingest(
 
   writePage(filePath, frontmatter, fullContent);
 
-  // Index in SQLite
-  indexPage(db, {
+  // Index in SQLite + generate embedding
+  await indexPageWithEmbedding(db, {
     id: pageId,
     domain: input.domain,
     category: input.category,

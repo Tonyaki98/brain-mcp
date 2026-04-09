@@ -50,8 +50,9 @@ const discovery = createDiscovery(vaultPath);
 // Re-index existing pages on startup
 import { readPage } from "./vault/reader.js";
 import { indexPage } from "./search/fts.js";
+import { getExtractor, generateEmbedding, storeEmbedding, hasEmbedding } from "./search/embeddings.js";
 
-function reindexVault(): void {
+async function reindexVault(): Promise<void> {
   const domains = discovery.getDomains();
   for (const domain of domains) {
     for (const [catName] of domain.categories) {
@@ -114,9 +115,25 @@ function reindexVault(): void {
 
   // Rebuild FTS5 index AFTER all pages are inserted to fix any drift
   db.exec("INSERT INTO pages_fts(pages_fts) VALUES('rebuild')");
+
+  // Generate embeddings for pages that don't have one yet
+  try {
+    await getExtractor(); // warm up the model
+    const allPages = db.prepare("SELECT id, title, tags, content, updated_at FROM pages").all() as Array<{
+      id: string; title: string; tags: string | null; content: string; updated_at: string;
+    }>;
+    for (const page of allPages) {
+      if (hasEmbedding(db, page.id, page.updated_at)) continue;
+      const text = `${page.title} ${page.tags ?? ""} ${page.content}`.slice(0, 1000);
+      const embedding = await generateEmbedding(text);
+      storeEmbedding(db, page.id, embedding);
+    }
+  } catch {
+    // Embedding model failed to load — FTS still works as fallback
+  }
 }
 
-reindexVault();
+await reindexVault();
 
 // Start watcher
 startWatcher(vaultPath, discovery, db);

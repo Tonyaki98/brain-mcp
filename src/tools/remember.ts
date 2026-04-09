@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type Database from "better-sqlite3";
 import { writePage, toKebabCase } from "../vault/writer.js";
-import { indexPage } from "../search/fts.js";
+import { indexPageWithEmbedding } from "../search/fts.js";
 import { logEntry } from "../wiki/log-manager.js";
 
 export interface RememberInput {
@@ -12,11 +12,11 @@ export interface RememberInput {
   expires?: string; // ISO date string, optional
 }
 
-export function remember(
+export async function remember(
   vaultPath: string,
   db: Database.Database,
   input: RememberInput,
-): string {
+): Promise<string> {
   const ephemeralDir = path.join(vaultPath, "_ephemeral");
   if (!fs.existsSync(ephemeralDir)) {
     fs.mkdirSync(ephemeralDir, { recursive: true });
@@ -43,8 +43,8 @@ export function remember(
 
   writePage(filePath, frontmatter, fullContent);
 
-  // Index in SQLite for query
-  indexPage(db, {
+  // Index in SQLite + generate embedding
+  await indexPageWithEmbedding(db, {
     id: pageId,
     domain: "_ephemeral",
     category: "memory",
