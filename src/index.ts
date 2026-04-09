@@ -52,9 +52,6 @@ import { readPage } from "./vault/reader.js";
 import { indexPage } from "./search/fts.js";
 
 function reindexVault(): void {
-  // Rebuild FTS5 index to fix any corruption (e.g. "fts5: missing row")
-  db.exec("INSERT INTO pages_fts(pages_fts) VALUES('rebuild')");
-
   const domains = discovery.getDomains();
   for (const domain of domains) {
     for (const [catName] of domain.categories) {
@@ -114,6 +111,9 @@ function reindexVault(): void {
       }
     }
   }
+
+  // Rebuild FTS5 index AFTER all pages are inserted to fix any drift
+  db.exec("INSERT INTO pages_fts(pages_fts) VALUES('rebuild')");
 }
 
 reindexVault();
