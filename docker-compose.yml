@@ -1,0 +1,10 @@
+services:
+  brain-mcp:
+    build: .
+    volumes:
+      - ./vault:/vault
+      - ./data:/data
+    environment:
+      - VAULT_PATH=/vault
+      - DB_PATH=/data/brain.db
+    restart: unless-stopped
