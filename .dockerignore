@@ -1,0 +1,10 @@
+node_modules/
+dist/
+data/
+vault/
+.git/
+.claude/
+.env
+*.db
+*.db-shm
+*.db-wal
