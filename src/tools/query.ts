@@ -1,7 +1,9 @@
 import path from "node:path";
 import type Database from "better-sqlite3";
+import type { VaultDiscovery } from "../vault/discovery.js";
 import { searchPages } from "../search/fts.js";
 import { readPage } from "../vault/reader.js";
+import { buildDomainGuide } from "./ingest.js";
 
 export interface QueryInput {
   question: string;
@@ -19,6 +21,7 @@ export async function query(
   vaultPath: string,
   db: Database.Database,
   input: QueryInput,
+  discovery?: VaultDiscovery,
 ): Promise<QueryResult> {
   const { results, meta } = await searchPages(db, input.question, {
     domain: input.domain,
@@ -52,5 +55,9 @@ export async function query(
     }
   }
 
-  return { text: output.join("\n\n"), logDetail };
+  let text = output.join("\n\n");
+  if (discovery) {
+    text += buildDomainGuide(discovery);
+  }
+  return { text, logDetail };
 }

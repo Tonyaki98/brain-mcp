@@ -7,6 +7,10 @@ import { indexPageWithEmbedding } from "../search/fts.js";
 import { createEdge } from "../vault/linker.js";
 import { regenerateIndex } from "../wiki/index-manager.js";
 import { logEntry } from "../wiki/log-manager.js";
+import { generateEmbedding, semanticSearch } from "../search/embeddings.js";
+
+const AUTO_LINK_THRESHOLD = 0.45;
+const AUTO_LINK_MAX = 3;
 
 export interface IngestInput {
   content: string;
@@ -25,6 +29,19 @@ export interface IngestInput {
   }>;
 }
 
+/** Build a compact domain guide for Claude to know where things go */
+export function buildDomainGuide(discovery: VaultDiscovery): string {
+  const domains = discovery.getDomains();
+  if (domains.length === 0) return "";
+  const lines = domains.map(d => {
+    const cats = Array.from(d.categories.values())
+      .map(c => `${c.name}(${c.pageTypes.join(",")})`)
+      .join(" | ");
+    return `  ${d.emoji} ${d.name}: ${d.description} → [${cats}]`;
+  });
+  return `\n\n📂 Dominios disponibles:\n${lines.join("\n")}\nSi ninguno encaja, usa create_domain.`;
+}
+
 export async function ingest(
   vaultPath: string,
   discovery: VaultDiscovery,
@@ -32,10 +49,13 @@ export async function ingest(
   input: IngestInput,
 ): Promise<string> {
   if (!discovery.domainExists(input.domain)) {
-    return `Error: dominio "${input.domain}" no existe. Usa create_domain primero.`;
+    const guide = buildDomainGuide(discovery);
+    return `Error: dominio "${input.domain}" no existe. Usa create_domain primero.${guide}`;
   }
   if (!discovery.categoryExists(input.domain, input.category)) {
-    return `Error: categoría "${input.category}" no existe en dominio "${input.domain}".`;
+    const domain = discovery.getDomain(input.domain);
+    const cats = domain ? Array.from(domain.categories.keys()).join(", ") : "?";
+    return `Error: categoría "${input.category}" no existe en dominio "${input.domain}". Categorías disponibles: ${cats}`;
   }
 
   const filename = toKebabCase(input.title) + ".md";
@@ -70,7 +90,7 @@ export async function ingest(
   }
 
   // Build content with references
-  let fullContent = `\n# ${input.title}\n\n${input.content}`;
+  let fullContent = `\n${input.content}`;
   if (references.length > 0) {
     fullContent += `\n\n## Referencias\n${references.map(r => `- ${r}`).join("\n")}`;
   }
@@ -107,8 +127,57 @@ export async function ingest(
     content: input.content,
   });
 
+  // Auto-link: find semantically similar pages and create edges
+  const autoLinked: string[] = [];
+  try {
+    const textForEmbedding = `${input.title} ${input.tags?.join(" ") ?? ""} ${input.content}`.slice(0, 1000);
+    const embedding = await generateEmbedding(textForEmbedding);
+    const similar = semanticSearch(db, embedding, { maxResults: AUTO_LINK_MAX + 1 });
+
+    // Track manually linked targets to avoid duplicates
+    const manualTargets = new Set(relations.map(r => r.target));
+
+    for (const match of similar) {
+      if (match.id === pageId) continue; // Skip self
+      if (match.score < AUTO_LINK_THRESHOLD) continue;
+      if (manualTargets.has(match.id)) continue; // Already linked manually
+
+      const [toDomain, toCategory, toPage] = match.id.split("/");
+      createEdge(db, {
+        fromDomain: input.domain,
+        fromCategory: input.category,
+        fromPage: toKebabCase(input.title),
+        relation: "related_to",
+        toDomain,
+        toCategory,
+        toPage,
+        note: `auto-linked (score: ${match.score.toFixed(2)})`,
+      });
+
+      // Also add reverse reference in frontmatter content
+      references.push(`[[${match.id}]]`);
+      autoLinked.push(`${match.id} (${match.score.toFixed(2)})`);
+    }
+  } catch {
+    // Embedding model not ready, skip auto-linking silently
+  }
+
+  // Rewrite page if auto-links added new references
+  if (autoLinked.length > 0) {
+    let updatedContent = `\n${input.content}`;
+    if (references.length > 0) {
+      updatedContent += `\n\n## Referencias\n${references.map(r => `- ${r}`).join("\n")}`;
+    }
+    writePage(filePath, frontmatter, updatedContent);
+  }
+
   regenerateIndex(vaultPath, discovery);
   logEntry(vaultPath, "ingest", `${pageId} — "${input.title}"`);
 
-  return `Integrado en ${pageId}`;
+  let result = `Integrado en ${pageId}`;
+  if (autoLinked.length > 0) {
+    result += `\n🔗 Auto-linked: ${autoLinked.join(", ")}`;
+  }
+  result += buildDomainGuide(discovery);
+  return result;
 }

@@ -102,7 +102,7 @@ export function createMcpServer(
       max_results: z.number().optional().describe("Máximo de resultados (default: 5)"),
     },
     async (input) => {
-      const { text, logDetail } = await query(vaultPath, db, input);
+      const { text, logDetail } = await query(vaultPath, db, input, discovery);
       session.log("query", logDetail);
       logEntry(vaultPath, "query", logDetail);
       return { content: [{ type: "text", text: withStaleCheck(text) }] };
